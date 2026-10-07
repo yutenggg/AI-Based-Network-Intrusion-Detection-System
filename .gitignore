@@ -222,6 +222,7 @@ __marimo__/
 # FYP Dataset files
 dataset/*.csv
 dataset/*.zip
+dataset/MachineLearningCVE/
 
 # Processed dataset files
 dataset/processed/
