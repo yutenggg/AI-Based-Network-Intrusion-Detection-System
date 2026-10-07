@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# FYP Dataset files
+dataset/*.csv
+dataset/*.zip
+
+# Processed dataset files
+dataset/processed/
