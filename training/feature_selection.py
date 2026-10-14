@@ -1,208 +1,196 @@
+# Import libraries for feature selection
 import pandas as pd
 import numpy as np
-from pathlib import Path
-from xgboost import XGBClassifier
 import json
 
-DATASET_PATH = Path("dataset/processed/cleaned_CICIDS2017.csv")
-OUTPUT_PATH = Path("training/selected_feature.json")
+from pathlib import Path
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier
 
+
+# Define the cleaned dataset and feature selection output paths
+DATASET_PATH = Path(
+    "dataset/processed/cleaned_CICIDS2017.csv"
+)
+
+OUTPUT_PATH = Path(
+    "training/selected_feature.json"
+)
+
+
+# Define the feature selection settings
+# Limit the sample size for each class to reduce memory usage
 SAMPLE_PER_CLASS = 10000
+
+# Read the large dataset in smaller batches
 CHUNK_SIZE = 100000
+
+# Set a fixed random seed so sampling can be reproduced
 RANDOM_STATE = 42
 
-print("Reading Label column...")
+# Set the minimum importance score for retaining a feature
+IMPORTANCE_THRESHOLD = 0.001
 
-label_df = pd.read_csv(
+
+# Check whether the cleaned dataset exists
+if not DATASET_PATH.exists():
+    raise FileNotFoundError(
+        f"Cleaned dataset not found: {DATASET_PATH}"
+    )
+
+
+print("=" * 60)
+print("CICIDS2017 Feature Selection")
+print("=" * 60)
+
+
+# Read only the Label column to identify the available classes
+labels = pd.read_csv(
     DATASET_PATH,
     usecols=["Label"]
-)
+)["Label"].str.strip()
 
-print("Total rows:", len(label_df))
+print(f"Total rows: {len(labels):,}")
 
-print("\nOriginal class distribution:")
+# Get the number of records belonging to each class
+class_counts = labels.value_counts()
 
-print(
-    label_df["Label"].value_counts()
-)
+print(f"Number of classes: {len(class_counts)}")
 
-print("\nCreating stratified sample indices...")
 
-rng = np.random.RandomState(
-    RANDOM_STATE
-)
+# Select a reproducible sample from each class
+# Rare classes will contribute all available records
+# when they contain fewer rows than SAMPLE_PER_CLASS
+rng = np.random.default_rng(RANDOM_STATE)
 
 sample_indices = []
 
-for label in label_df["Label"].unique():
+for class_name, class_count in class_counts.items():
 
-    indices = label_df.index[
-        label_df["Label"] == label
-    ].to_numpy()
-
-    sample_count = min(
-        SAMPLE_PER_CLASS,
-        len(indices)
+    # Find the row positions belonging to the current class
+    class_indices = np.flatnonzero(
+        labels.to_numpy() == class_name
     )
 
-    selected = rng.choice(
-        indices,
+    # Determine how many rows to sample from this class
+    sample_count = min(
+        SAMPLE_PER_CLASS,
+        class_count
+    )
+
+    # Randomly select row positions without replacement
+    selected_indices = rng.choice(
+        class_indices,
         size=sample_count,
         replace=False
     )
 
-    sample_indices.extend(
-        selected
-    )
+    sample_indices.extend(selected_indices.tolist())
 
-sample_indices = np.array(
-    sorted(sample_indices)
+
+# Sort the selected positions for easier chunk processing
+sample_indices = np.sort(
+    np.asarray(sample_indices, dtype=np.int64)
 )
 
-print(
-    "Total sampled rows:",
-    len(sample_indices)
-)
+print(f"Stratified sample rows: {len(sample_indices):,}")
 
-print("\nReading selected rows in chunks...")
 
-sample_parts = []
+# Read the selected rows from the complete dataset in chunks
+# This avoids loading all 2.5 million rows into memory at once
+sampled_chunks = []
 
-sample_index_set = set(
-    sample_indices
-)
+selected_position_set = set(sample_indices.tolist())
 
-current_start = 0
+processed_rows = 0
 
-for chunk in pd.read_csv(
-    DATASET_PATH,
-    chunksize=CHUNK_SIZE
+for chunk_number, chunk in enumerate(
+    pd.read_csv(
+        DATASET_PATH,
+        chunksize=CHUNK_SIZE
+    ),
+    start=1
 ):
 
-    current_end = (
-        current_start + len(chunk)
+    # Standardise column names
+    chunk.columns = chunk.columns.str.strip()
+
+    # Assign original row positions to the current chunk
+    chunk_positions = np.arange(
+        processed_rows,
+        processed_rows + len(chunk)
     )
 
-    chunk_indices = np.arange(
-        current_start,
-        current_end
-    )
-
-    selected_in_chunk = np.intersect1d(
-        chunk_indices,
+    # Identify rows selected for the stratified sample
+    mask = np.isin(
+        chunk_positions,
         sample_indices
     )
 
-    if len(selected_in_chunk) > 0:
+    # Keep only the selected sample rows
+    selected_chunk = chunk.loc[mask]
 
-        relative_indices = (
-            selected_in_chunk
-            - current_start
-        )
+    if not selected_chunk.empty:
+        sampled_chunks.append(selected_chunk)
 
-        selected_chunk = chunk.iloc[
-            relative_indices
-        ]
-
-        sample_parts.append(
-            selected_chunk
-        )
-
-    current_start = current_end
+    # Update the number of rows already processed
+    processed_rows += len(chunk)
 
     print(
-        f"Processed rows: {current_end}"
+        f"Processed chunk {chunk_number} | "
+        f"Rows scanned: {processed_rows:,}"
     )
 
+
+# Combine the sampled rows into one dataframe
 sample_df = pd.concat(
-    sample_parts,
+    sampled_chunks,
     ignore_index=True
 )
 
-print(
-    "\nSample dataset rows:",
-    len(sample_df)
-)
+print(f"\nSample rows loaded: {len(sample_df):,}")
+print(f"Sample columns: {len(sample_df.columns)}")
 
-print(
-    "Sample dataset columns:",
-    len(sample_df.columns)
-)
 
-sample_df.columns = (
-    sample_df.columns.str.strip()
-)
+# Separate the input features and target labels
+# Label is the target and must not be included as an input feature
+sample_df.columns = sample_df.columns.str.strip()
 
-X = sample_df.drop(
-    columns=["Label"]
-)
+X = sample_df.drop(columns=["Label"])
+y = sample_df["Label"].astype(str).str.strip()
 
-y = sample_df["Label"]
+# Replace infinite values with missing values
+X = X.replace([np.inf, -np.inf], np.nan)
 
-print(
-    "\nFeature columns:",
-    X.shape[1]
-)
+# Keep only rows with valid feature values and labels
+valid_rows = X.notna().all(axis=1) & y.notna()
 
-X = X.replace(
-    [np.inf, -np.inf],
-    np.nan
-)
+X = X.loc[valid_rows].copy()
+y = y.loc[valid_rows].copy()
 
-# Remove rows containing missing values
+print(f"Rows after cleaning: {len(X):,}")
+print(f"Feature columns: {len(X.columns)}")
 
-valid_rows = X.notna().all(
-    axis=1
-)
 
-X = X.loc[
-    valid_rows
-]
+# Convert text class labels into numeric labels for XGBoost
+label_encoder = LabelEncoder()
 
-y = y.loc[
-    valid_rows
-]
+y_encoded = label_encoder.fit_transform(y)
 
-print(
-    "Rows after cleaning:",
-    len(X)
-)
+# Display the mapping between original and encoded labels
+print("\nLabel Mapping:")
 
-# ==========================================
-# 11. Encode labels
-# ==========================================
+for encoded_value, class_name in enumerate(
+    label_encoder.classes_
+):
+    print(f"{class_name} -> {encoded_value}")
 
-labels = sorted(
-    y.unique()
-)
 
-label_mapping = {
-    label: index
-    for index, label in enumerate(labels)
-}
-
-y = y.map(
-    label_mapping
-)
-
-print(
-    "\nNumber of classes:",
-    len(label_mapping)
-)
-
-print(
-    "\nLabel mapping:"
-)
-
-for label, number in label_mapping.items():
-
-    print(
-        f"{label} -> {number}"
-    )
-
-print(
-    "\nTraining preliminary XGBoost model..."
-)
+# Create a preliminary XGBoost classifier
+# This model estimates feature importance for feature selection
+print("\n" + "=" * 60)
+print("Training Preliminary XGBoost Model")
+print("=" * 60)
 
 model = XGBClassifier(
     n_estimators=100,
@@ -216,86 +204,70 @@ model = XGBClassifier(
     n_jobs=2
 )
 
-model.fit(
-    X,
-    y
-)
+# Train the preliminary model on the sampled data
+model.fit(X, y_encoded)
 
-print(
-    "Preliminary XGBoost training completed."
-)
+print("Preliminary XGBoost training completed.")
 
-importance = (
-    model.feature_importances_
-)
 
+# Obtain the importance score of each input feature
 feature_importance = pd.DataFrame({
     "Feature": X.columns,
-    "Importance": importance
+    "Importance": model.feature_importances_
 })
 
-feature_importance = (
-    feature_importance
-    .sort_values(
-        by="Importance",
-        ascending=False
+# Sort features from most important to least important
+feature_importance.sort_values(
+    by="Importance",
+    ascending=False,
+    inplace=True
+)
+
+print("\nTop 20 Features:")
+
+print(
+    feature_importance.head(20).to_string(index=False)
+)
+
+
+# Retain features that meet the selected importance threshold
+selected_features = feature_importance.loc[
+    feature_importance["Importance"] >= IMPORTANCE_THRESHOLD,
+    "Feature"
+].tolist()
+
+# Stop if no features meet the threshold
+if not selected_features:
+    raise ValueError(
+        "No features were selected. "
+        "Review the importance threshold."
     )
+
+print(
+    f"\nImportance threshold: {IMPORTANCE_THRESHOLD}"
 )
 
 print(
-    "\nFeature Importance Ranking:"
+    f"Selected features count: {len(selected_features)}"
 )
 
-print(
-    feature_importance.to_string(
-        index=False
-    )
-)
 
-threshold = 0.001
-
-selected_features = (
-    feature_importance[
-        feature_importance["Importance"]
-        >= threshold
-    ]["Feature"]
-    .tolist()
-)
-
-print(
-    "\nSelected features:",
-    len(selected_features)
-)
-
-for feature in selected_features:
-
-    print(
-        feature
-    )
-
+# Save the selected feature names to a JSON file
+# Training, validation, testing, and website input must
+# reuse this same feature list
 OUTPUT_PATH.parent.mkdir(
     parents=True,
     exist_ok=True
 )
 
-with open(
-    OUTPUT_PATH,
-    "w"
-) as file:
-
+with open(OUTPUT_PATH, "w", encoding="utf-8") as file:
     json.dump(
-        {
-            "features":
-                selected_features
-        },
+        {"features": selected_features},
         file,
         indent=4
     )
 
-print(
-    "\nSelected features saved to:"
-)
 
-print(
-    OUTPUT_PATH
-)
+# Display the final output location
+print(f"\nSaved selected features to: {OUTPUT_PATH}")
+print("Feature selection completed.")
