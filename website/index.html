@@ -1,0 +1,101 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Based Network Intrusion Detection System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Page Header -->
+    <header>
+        <div class="header-content">
+            <h1>AI-Based Network Intrusion Detection System</h1>
+            <p>Intelligent Network Traffic Monitoring and Attack Detection</p>
+        </div>
+    </header>
+
+    <main>
+
+        <!-- CSV Upload Section -->
+        <section class="upload-section">
+            <h2>Upload Network Traffic Dataset</h2>
+            <p>Select a CSV file containing the required 63 network traffic features.</p>
+
+            <input type="file" id="csvFile" accept=".csv">
+
+            <button id="uploadButton">Upload and Detect</button>
+
+            <p id="statusMessage">Please upload a CSV file to begin detection.</p>
+        </section>
+
+        <!-- Detection Overview -->
+        <section id="resultsSection" hidden>
+            <h2>Detection Overview</h2>
+
+            <div class="stats-container">
+                <div class="stat-card">
+                    <h3>Total Records</h3>
+                    <p id="totalRecords">0</p>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Normal Records</h3>
+                    <p id="normalRecords">0</p>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Detected Attacks</h3>
+                    <p id="detectedAttacks">0</p>
+                </div>
+            </div>
+
+            <!-- Attack Summary -->
+            <h2>Attack Summary</h2>
+            <div id="attackSummary" class="summary-container"></div>
+
+            <!-- Detection Results Table -->
+            <div class="results-header">
+                <h2>Detection Results</h2>
+                <button id="downloadButton">Download Detection Results</button>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Row</th>
+                            <th>Attack Type</th>
+                            <th>Risk Level</th>
+                            <th>Confidence Score</th>
+                            <th>Security Recommendation</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTable"></tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Controls -->
+            <div class="pagination">
+                <p id="pageInfo">Showing 0 records</p>
+
+                <div class="pagination-buttons">
+                    <button id="prevPage" disabled>Previous</button>
+                    <button id="nextPage" disabled>Next</button>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Page Footer -->
+    <footer>
+        <p>AI-Based Network Intrusion Detection System | XGBoost Model</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
