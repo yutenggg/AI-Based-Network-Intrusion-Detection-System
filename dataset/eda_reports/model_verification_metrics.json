@@ -1,0 +1,10 @@
+{
+    "Testing Records": 504160,
+    "Number of Features": 63,
+    "Number of Classes": 15,
+    "Accuracy": 0.9988356870834656,
+    "Macro Precision": 0.9158363765997135,
+    "Macro Recall": 0.8966520533270309,
+    "Macro F1-Score": 0.9049043627716258,
+    "Weighted F1-Score": 0.9988204645767867
+}

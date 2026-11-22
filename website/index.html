@@ -52,6 +52,38 @@
                 </div>
             </div>
 
+            <!-- Model Evaluation -->
+            <section id="modelEvaluationSection" hidden>
+                <h2>Model Evaluation</h2>
+                <p class="evaluation-description">
+                    XGBoost model performance based on the uploaded dataset with ground truth labels.
+                </p>
+
+                <div class="metrics-container">
+
+                    <div class="metric-card">
+                        <h3>Accuracy</h3>
+                        <p id="accuracyMetric">0%</p>
+                    </div>
+
+                    <div class="metric-card">
+                        <h3>Macro Precision</h3>
+                        <p id="precisionMetric">0%</p>
+                    </div>
+
+                    <div class="metric-card">
+                        <h3>Macro Recall</h3>
+                        <p id="recallMetric">0%</p>
+                    </div>
+
+                    <div class="metric-card">
+                        <h3>Macro F1 Score</h3>
+                        <p id="f1Metric">0%</p>
+                    </div>
+
+                </div>
+            </section>
+
             <!-- Attack Summary -->
             <h2>Attack Summary</h2>
             <div id="attackSummary" class="summary-container"></div>

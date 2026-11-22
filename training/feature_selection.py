@@ -1,7 +1,9 @@
+
 # Import libraries for feature selection
 import pandas as pd
 import numpy as np
 import json
+import matplotlib.pyplot as plt
 
 from pathlib import Path
 from sklearn.preprocessing import LabelEncoder
@@ -17,19 +19,20 @@ OUTPUT_PATH = Path(
     "training/selected_feature.json"
 )
 
+CHART_FOLDER = Path(
+    "dataset/eda_reports/charts"
+)
+
 
 # Define the feature selection settings
-# Limit the sample size for each class to reduce memory usage
 SAMPLE_PER_CLASS = 10000
-
-# Read the large dataset in smaller batches
 CHUNK_SIZE = 100000
-
-# Set a fixed random seed so sampling can be reproduced
 RANDOM_STATE = 42
-
-# Set the minimum importance score for retaining a feature
 IMPORTANCE_THRESHOLD = 0.001
+
+
+# Create the chart output folder
+CHART_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 # Check whether the cleaned dataset exists
@@ -52,33 +55,27 @@ labels = pd.read_csv(
 
 print(f"Total rows: {len(labels):,}")
 
-# Get the number of records belonging to each class
 class_counts = labels.value_counts()
 
 print(f"Number of classes: {len(class_counts)}")
 
 
 # Select a reproducible sample from each class
-# Rare classes will contribute all available records
-# when they contain fewer rows than SAMPLE_PER_CLASS
 rng = np.random.default_rng(RANDOM_STATE)
 
 sample_indices = []
 
 for class_name, class_count in class_counts.items():
 
-    # Find the row positions belonging to the current class
     class_indices = np.flatnonzero(
         labels.to_numpy() == class_name
     )
 
-    # Determine how many rows to sample from this class
     sample_count = min(
         SAMPLE_PER_CLASS,
         class_count
     )
 
-    # Randomly select row positions without replacement
     selected_indices = rng.choice(
         class_indices,
         size=sample_count,
@@ -88,7 +85,6 @@ for class_name, class_count in class_counts.items():
     sample_indices.extend(selected_indices.tolist())
 
 
-# Sort the selected positions for easier chunk processing
 sample_indices = np.sort(
     np.asarray(sample_indices, dtype=np.int64)
 )
@@ -97,10 +93,7 @@ print(f"Stratified sample rows: {len(sample_indices):,}")
 
 
 # Read the selected rows from the complete dataset in chunks
-# This avoids loading all 2.5 million rows into memory at once
 sampled_chunks = []
-
-selected_position_set = set(sample_indices.tolist())
 
 processed_rows = 0
 
@@ -112,28 +105,23 @@ for chunk_number, chunk in enumerate(
     start=1
 ):
 
-    # Standardise column names
     chunk.columns = chunk.columns.str.strip()
 
-    # Assign original row positions to the current chunk
     chunk_positions = np.arange(
         processed_rows,
         processed_rows + len(chunk)
     )
 
-    # Identify rows selected for the stratified sample
     mask = np.isin(
         chunk_positions,
         sample_indices
     )
 
-    # Keep only the selected sample rows
     selected_chunk = chunk.loc[mask]
 
     if not selected_chunk.empty:
         sampled_chunks.append(selected_chunk)
 
-    # Update the number of rows already processed
     processed_rows += len(chunk)
 
     print(
@@ -153,16 +141,15 @@ print(f"Sample columns: {len(sample_df.columns)}")
 
 
 # Separate the input features and target labels
-# Label is the target and must not be included as an input feature
 sample_df.columns = sample_df.columns.str.strip()
 
 X = sample_df.drop(columns=["Label"])
 y = sample_df["Label"].astype(str).str.strip()
 
+
 # Replace infinite values with missing values
 X = X.replace([np.inf, -np.inf], np.nan)
 
-# Keep only rows with valid feature values and labels
 valid_rows = X.notna().all(axis=1) & y.notna()
 
 X = X.loc[valid_rows].copy()
@@ -172,12 +159,11 @@ print(f"Rows after cleaning: {len(X):,}")
 print(f"Feature columns: {len(X.columns)}")
 
 
-# Convert text class labels into numeric labels for XGBoost
+# Convert text class labels into numeric labels
 label_encoder = LabelEncoder()
 
 y_encoded = label_encoder.fit_transform(y)
 
-# Display the mapping between original and encoded labels
 print("\nLabel Mapping:")
 
 for encoded_value, class_name in enumerate(
@@ -186,8 +172,7 @@ for encoded_value, class_name in enumerate(
     print(f"{class_name} -> {encoded_value}")
 
 
-# Create a preliminary XGBoost classifier
-# This model estimates feature importance for feature selection
+# Train a preliminary XGBoost classifier
 print("\n" + "=" * 60)
 print("Training Preliminary XGBoost Model")
 print("=" * 60)
@@ -204,19 +189,17 @@ model = XGBClassifier(
     n_jobs=2
 )
 
-# Train the preliminary model on the sampled data
 model.fit(X, y_encoded)
 
 print("Preliminary XGBoost training completed.")
 
 
-# Obtain the importance score of each input feature
+# Calculate feature importance scores
 feature_importance = pd.DataFrame({
     "Feature": X.columns,
     "Importance": model.feature_importances_
 })
 
-# Sort features from most important to least important
 feature_importance.sort_values(
     by="Importance",
     ascending=False,
@@ -230,31 +213,34 @@ print(
 )
 
 
-# Retain features that meet the selected importance threshold
-selected_features = feature_importance.loc[
-    feature_importance["Importance"] >= IMPORTANCE_THRESHOLD,
-    "Feature"
-].tolist()
+# Select features based on the importance threshold
+selected_df = feature_importance.loc[
+    feature_importance["Importance"] >= IMPORTANCE_THRESHOLD
+].copy()
 
-# Stop if no features meet the threshold
+removed_df = feature_importance.loc[
+    feature_importance["Importance"] < IMPORTANCE_THRESHOLD
+].copy()
+
+selected_features = selected_df["Feature"].tolist()
+
 if not selected_features:
     raise ValueError(
         "No features were selected. "
         "Review the importance threshold."
     )
 
-print(
-    f"\nImportance threshold: {IMPORTANCE_THRESHOLD}"
-)
+print("\n" + "=" * 60)
+print("Feature Selection Results")
+print("=" * 60)
 
-print(
-    f"Selected features count: {len(selected_features)}"
-)
+print(f"Importance threshold: {IMPORTANCE_THRESHOLD}")
+print(f"Original features: {len(feature_importance)}")
+print(f"Selected features: {len(selected_df)}")
+print(f"Removed features: {len(removed_df)}")
 
 
-# Save the selected feature names to a JSON file
-# Training, validation, testing, and website input must
-# reuse this same feature list
+# Save the selected feature names to JSON
 OUTPUT_PATH.parent.mkdir(
     parents=True,
     exist_ok=True
@@ -267,7 +253,126 @@ with open(OUTPUT_PATH, "w", encoding="utf-8") as file:
         indent=4
     )
 
+print(f"Saved selected features to: {OUTPUT_PATH}")
 
-# Display the final output location
-print(f"\nSaved selected features to: {OUTPUT_PATH}")
-print("Feature selection completed.")
+
+# Chart 1: Top 63 Selected Important Features
+
+selected_df = selected_df.sort_values(
+    by="Importance",
+    ascending=True
+)
+
+fig1, ax1 = plt.subplots(
+    figsize=(13, max(12, len(selected_df) * 0.32))
+)
+
+bars1 = ax1.barh(
+    selected_df["Feature"],
+    selected_df["Importance"],
+    color="steelblue"
+)
+
+ax1.set_xlabel("XGBoost Feature Importance Score")
+ax1.set_ylabel("Feature Name")
+ax1.set_title(
+    f"Top {len(selected_df)} Selected Important Features"
+)
+
+ax1.bar_label(
+    bars1,
+    labels=[
+        f"{value:.4f}"
+        for value in selected_df["Importance"]
+    ],
+    padding=3,
+    fontsize=7
+)
+
+ax1.grid(axis="x", linestyle="--", alpha=0.3)
+ax1.set_axisbelow(True)
+
+fig1.tight_layout()
+
+fig1.savefig(
+    CHART_FOLDER / "top_63_important_features.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+
+
+# Chart 2: Feature Selection Threshold = 0.001
+
+plot_df = feature_importance.sort_values(
+    by="Importance",
+    ascending=True
+).copy()
+
+plot_df["Selection"] = np.where(
+    plot_df["Importance"] >= IMPORTANCE_THRESHOLD,
+    "Selected",
+    "Removed"
+)
+
+colors = plot_df["Selection"].map({
+    "Selected": "seagreen",
+    "Removed": "indianred"
+})
+
+fig2, ax2 = plt.subplots(
+    figsize=(14, max(14, len(plot_df) * 0.30))
+)
+
+ax2.scatter(
+    plot_df["Importance"],
+    plot_df["Feature"],
+    c=colors,
+    s=45
+)
+
+ax2.axvline(
+    x=IMPORTANCE_THRESHOLD,
+    color="black",
+    linestyle="--",
+    linewidth=1.5,
+    label=f"Threshold = {IMPORTANCE_THRESHOLD}"
+)
+
+ax2.set_xlabel("XGBoost Feature Importance Score")
+ax2.set_ylabel("Feature Name")
+
+ax2.set_title(
+    "Feature Selection Based on Importance Threshold"
+)
+
+ax2.grid(axis="x", linestyle="--", alpha=0.3)
+ax2.set_axisbelow(True)
+
+ax2.legend(
+    title="Feature Selection",
+    loc="lower right"
+)
+
+fig2.tight_layout()
+
+fig2.savefig(
+    CHART_FOLDER / "feature_selection_threshold.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+
+
+# Display Both Charts
+print("\nCharts generated successfully!")
+
+print(
+    CHART_FOLDER / "top_63_important_features.png"
+)
+
+print(
+    CHART_FOLDER / "feature_selection_threshold.png"
+)
+
+plt.show()
+
+print("\nFeature selection completed.")

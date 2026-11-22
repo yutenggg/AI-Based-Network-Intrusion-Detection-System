@@ -125,6 +125,43 @@ button:disabled {
     color: #172554;
 }
 
+/* Model Evaluation */
+#modelEvaluationSection {
+    margin-bottom: 30px;
+}
+
+.evaluation-description {
+    color: #64748b;
+    font-size: 14px;
+    margin-top: -8px;
+    margin-bottom: 20px;
+}
+
+.metrics-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+}
+
+.metric-card {
+    background: #f8fafc;
+    padding: 22px;
+    border-radius: 8px;
+    border-left: 5px solid #2563eb;
+}
+
+.metric-card h3 {
+    font-size: 14px;
+    color: #475569;
+    margin-bottom: 15px;
+}
+
+.metric-card p {
+    font-size: 27px;
+    font-weight: bold;
+    color: #172554;
+}
+
 /* Attack Summary */
 .summary-container {
     display: flex;
@@ -273,8 +310,18 @@ footer {
 }
 
 /* Responsive Layout */
+@media (max-width: 900px) {
+    .metrics-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
 @media (max-width: 700px) {
     .stats-container {
+        grid-template-columns: 1fr;
+    }
+
+    .metrics-container {
         grid-template-columns: 1fr;
     }
 
