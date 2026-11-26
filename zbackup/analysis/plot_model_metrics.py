@@ -9,12 +9,13 @@ metrics = {
     "Accuracy": 99.88,
     "Macro Precision": 91.58,
     "Macro Recall": 89.67,
-    "Macro F1 Score": 90.49
+    "Macro F1 Score": 90.49,
+    "Weighted F1 Score": 99.88
 }
 
 
 # Define Output Path
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 OUTPUT_PATH = (
     BASE_DIR / "testing" / "model_evaluation_metrics.png"
